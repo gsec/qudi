@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 """
-This file contains the Qudi hardware file to control the microwave dummy.
+This file contains the Qudi hardware module for the Windfreak SynthHDPro microwave source.
 
 Qudi is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -21,7 +21,7 @@ top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi
 """
 
 import visa
-from core.module import Base
+from core.module import Base, ConfigOption
 from interface.microwave_interface import MicrowaveInterface
 from interface.microwave_interface import MicrowaveLimits
 from interface.microwave_interface import MicrowaveMode
@@ -44,10 +44,19 @@ class MicrowaveSynthHDPro(Base, MicrowaveInterface):
         """
         # trying to load the visa connection to the module
         self.rm = visa.ResourceManager()
-        self._ser_connection = self.rm.open_resource(
+        self._conn = self.rm.open_resource(
             self._serial_port,
             timeout=self._serial_timeout)
 
+        self.mod_fw = self._conn.query('v0')
+        self.mod_hw = self._conn.query('v1')
+        self.model = self._conn.query('+')
+        self.sernr = self._conn.query('-')
+        self.log.info('Found {0} {1} hw: {2} fw: {3}'.format(
+            self.model, self.sernr, self.mod_hw, self.mod_fw))
+        tmp = float(self._conn.query('z?'))
+        self.log.info('MW synth temperature: {0}°C'.format(tmp))
+        self._off()
 
     def on_deactivate(self):
         """ Deinitialisation performed during deactivation of the module.
@@ -55,23 +64,23 @@ class MicrowaveSynthHDPro(Base, MicrowaveInterface):
         pass
 
     def get_limits(self):
-        """Dummy limits"""
+        """SynthHD Pro limits"""
         limits = MicrowaveLimits()
-        limits.supported_modes = (MicrowaveMode.CW, MicrowaveMode.LIST, MicrowaveMode.SWEEP)
+        limits.supported_modes = (MicrowaveMode.CW, MicrowaveMode.SWEEP)  # MicrowaveMode.LIST)
 
-        limits.min_frequency = 100e3
-        limits.max_frequency = 20e9
+        limits.min_frequency = 53e6
+        limits.max_frequency = 14e9
 
-        limits.min_power = -120
-        limits.max_power = 30
+        limits.min_power = -60
+        limits.max_power = 20
 
-        limits.list_minstep = 0.001
-        limits.list_maxstep = 20e9
-        limits.list_maxentries = 10001
+        limits.list_minstep = 0.01
+        limits.list_maxstep = 14e9
+        limits.list_maxentries = 100
 
-        limits.sweep_minstep = 0.001
-        limits.sweep_maxstep = 20e9
-        limits.sweep_maxentries = 10001
+        limits.sweep_minstep = 0.01
+        limits.sweep_maxstep = 14e9
+        limits.sweep_maxentries = 100
         return limits
 
     def get_status(self):
@@ -81,19 +90,24 @@ class MicrowaveSynthHDPro(Base, MicrowaveInterface):
 
         @return str, bool: mode ['cw', 'list', 'sweep'], is_running [True, False]
         """
+        mode = ''
+        active = False
         if self.current_output_mode == MicrowaveMode.CW:
-            pass
+            mode = 'cw'
         elif self.current_output_mode == MicrowaveMode.LIST:
-            pass
+            mode = 'list'
+            active = int(self._conn.query('g?')) == 1
         elif self.current_output_mode == MicrowaveMode.SWEEP:
-            pass
-        return mode, self.output_active
+            mode = 'sweep'
+            active = int(self._conn.query('g?')) == 1
+        return mode, active
 
     def off(self):
         """ Switches off any microwave output.
 
         @return int: error code (0:OK, -1:error)
         """
+        self._off()
         return 0
 
     def get_power(self):
@@ -102,8 +116,10 @@ class MicrowaveSynthHDPro(Base, MicrowaveInterface):
         @return float: the power set at the device in dBm
         """
         if self.current_output_mode == MicrowaveMode.CW:
-            return self.mw_cw_power
+            mw_cw_power = float(self._conn.query('W?'))
+            return mw_cw_power
         else:
+
             return self.mw_sweep_power
 
     def get_frequency(self):
@@ -114,13 +130,16 @@ class MicrowaveSynthHDPro(Base, MicrowaveInterface):
 
         @return [float, list]: frequency(s) currently set for this device in Hz
         """
-        self.log.debug('MicrowaveDummy>get_frequency')
         if self.current_output_mode == MicrowaveMode.CW:
-            return self.mw_cw_frequency
+            mw_cw_frequency = float(self._conn.query('f?'))
+            return mw_cw_frequency
         elif self.current_output_mode == MicrowaveMode.LIST:
             return self.mw_frequency_list
         elif self.current_output_mode == MicrowaveMode.SWEEP:
-            return (self.mw_start_freq, self.mw_stop_freq, self.mw_step_freq)
+            mw_start_freq = float(self._conn.query('l?'))
+            mw_stop_freq = float(self._conn.query('u?'))
+            mw_step_freq = float(self._conn.query('s?'))
+            return mw_start_freq, mw_stop_freq, mw_step_freq
 
     def cw_on(self):
         """
@@ -195,6 +214,7 @@ class MicrowaveSynthHDPro(Base, MicrowaveInterface):
 
         @return int: error code (0:OK, -1:error)
         """
+        self._conn.write('g1')
         return 0
 
     def sweep_on(self):
@@ -203,9 +223,9 @@ class MicrowaveSynthHDPro(Base, MicrowaveInterface):
         @return int: error code (0:OK, -1:error)
         """
         self.current_output_mode = MicrowaveMode.SWEEP
-        time.sleep(1)
-        self.output_active = True
-        self.log.info('MicrowaveDummy>Sweep mode output on')
+        self._conn.write('g1')
+        mode = int(self._conn.query('g?'))
+        self._on()
         return 0
 
     def set_sweep(self, start=None, stop=None, step=None, power=None):
@@ -219,18 +239,46 @@ class MicrowaveSynthHDPro(Base, MicrowaveInterface):
                                                  current power in dBm,
                                                  current mode
         """
-        self.log.debug('MicrowaveDummy>set_sweep, start: {0:f}, stop: {1:f}, step: {2:f}, '
-                       'power: {3:f}'.format(start, stop, step, power))
-        self.output_active = False
         self.current_output_mode = MicrowaveMode.SWEEP
         if (start is not None) and (stop is not None) and (step is not None):
-            self.mw_start_freq = start
-            self.mw_stop_freq = stop
-            self.mw_step_freq = step
+            # sweep mode: linear sweep, non-continuous
+            self._conn.write('X0')
+            self.conn.write('c0')
+
+            # trigger mode: single step
+            self._conn.write('w2')
+
+            # sweep direction
+            if stop >= start:
+                self._conn.write('^1')
+            else:
+                self._conn.write('^0')
+
+            # sweep frequency and steps
+            self._conn.write('l{0:5.7f}'.format(start))
+            self._conn.write('u{0:5.7f}'.format(stop))
+            self._conn.write('s{0:5.7f}'.format(step))
+
+        # sweep power
         if power is not None:
-            self.mw_sweep_power = power
-        return self.mw_start_freq, self.mw_stop_freq, self.mw_step_freq, self.mw_sweep_power, \
-               'sweep'
+            self._conn.write('W{0:2.3f}'.format(power))
+            self._conn.write('[{0:2.3f}'.format(power))
+            self._conn.write(']{0:2-3f}'.format(power))
+
+        mw_start_freq = float(self._conn.query('l?'))
+        mw_stop_freq = float(self._conn.query('u?'))
+        mw_step_freq = float(self._conn.query('s?'))
+        mw_power = float(self._conn.query('W?'))
+        mw_sweep_power_start = float(self._conn.query('[?'))
+        mw_sweep_power_stop = float(self._conn.query(']?'))
+
+        return (
+            mw_start_freq,
+            mw_stop_freq,
+            mw_step_freq,
+            mw_sweep_power_start,
+            'sweep'
+        )
 
     def reset_sweeppos(self):
         """
@@ -238,6 +286,7 @@ class MicrowaveSynthHDPro(Base, MicrowaveInterface):
 
         @return int: error code (0:OK, -1:error)
         """
+        self._conn.write('g1')
         return 0
 
     def set_ext_trigger(self, pol):
@@ -258,3 +307,10 @@ class MicrowaveSynthHDPro(Base, MicrowaveInterface):
         the function at least a save waiting time.
         """
         return
+
+    def _off(self):
+        self.conn.query('E0r0h0')
+
+    def _on(self):
+        self.conn.query('E1r1h1')
+
