@@ -44,7 +44,7 @@ class MicrowaveSynthHDPro(Base, MicrowaveInterface):
         """ Initialisation performed during activation of the module.
         """
         # trying to load the visa connection to the module
-        self.rm = visa.ResourceManager('@py')
+        self.rm = visa.ResourceManager()
         self._conn = self.rm.open_resource(
             self._serial_port,
             baud_rate=9600,
@@ -52,26 +52,21 @@ class MicrowaveSynthHDPro(Base, MicrowaveInterface):
             write_termination='\n',
             timeout=self._serial_timeout*1000
         )
-
         self.model = self._conn.query('+')
-        print(self.model)
         self.sernr = self._conn.query('-')
-        print(self.sernr)
         self.mod_hw = self._conn.query('v1')
-        print(self.mod_hw)
         self.mod_fw = self._conn.query('v0')
-        print(self.mod_fw)
-
-        print(self._conn.query('v0v1'))
-        print(self._conn.read())
 
         self.log.info('Found {0} Ser No: {1} {2} {3}'.format(
-            self.model, self.sernr, self.mod_hw, self.mod_fw))
-        tmp = self._conn.query('z')
+            self.model, self.sernr, self.mod_hw, self.mod_fw)
+        )
 
-        self.log.info('MW synth temperature: {0}'.format(tmp))
+        tmp = self._conn.query('z')
+        self.log.info('MW synth temperature: {0}°C'.format(tmp))
+
         ch = self._conn.query('C{0:d}C?'.format(self._channel))
         self.log.debug('Channel set: {} channel read: {}'.format(self._channel, ch))
+
         print('Off:', self._off())
         self.current_output_mode = MicrowaveMode.CW
 
@@ -107,16 +102,18 @@ class MicrowaveSynthHDPro(Base, MicrowaveInterface):
 
         @return str, bool: mode ['cw', 'list', 'sweep'], is_running [True, False]
         """
+        print('get status')
         mode = ''
-        active = False
+
+        status = self._stat()
+        active = status[0] == 1 and status[1] == 1 and status[2] == 1
+
         if self.current_output_mode == MicrowaveMode.CW:
             mode = 'cw'
         elif self.current_output_mode == MicrowaveMode.LIST:
             mode = 'list'
-            active = int(self._conn.query('g?')) == 1
         elif self.current_output_mode == MicrowaveMode.SWEEP:
             mode = 'sweep'
-            active = int(self._conn.query('g?')) == 1
         return mode, active
 
     def off(self):
@@ -124,7 +121,8 @@ class MicrowaveSynthHDPro(Base, MicrowaveInterface):
 
         @return int: error code (0:OK, -1:error)
         """
-        self._off()
+        self._conn.write('g0')
+        print('Off:', self._off())
         return 0
 
     def get_power(self):
@@ -132,6 +130,7 @@ class MicrowaveSynthHDPro(Base, MicrowaveInterface):
 
         @return float: the power set at the device in dBm
         """
+        print('get power')
         if self.current_output_mode == MicrowaveMode.CW:
             mw_cw_power = float(self._conn.query('W?'))
             return mw_cw_power
@@ -147,15 +146,16 @@ class MicrowaveSynthHDPro(Base, MicrowaveInterface):
 
         @return [float, list]: frequency(s) currently set for this device in Hz
         """
+        print('get freq')
         if self.current_output_mode == MicrowaveMode.CW:
-            mw_cw_frequency = float(self._conn.query('f?'))
+            mw_cw_frequency = float(self._conn.query('f?')) * 1e6
             return mw_cw_frequency
         elif self.current_output_mode == MicrowaveMode.LIST:
             return self.mw_frequency_list
         elif self.current_output_mode == MicrowaveMode.SWEEP:
-            mw_start_freq = float(self._conn.query('l?'))
-            mw_stop_freq = float(self._conn.query('u?'))
-            mw_step_freq = float(self._conn.query('s?'))
+            mw_start_freq = float(self._conn.query('l?')) * 1e6
+            mw_stop_freq = float(self._conn.query('u?')) * 1e6
+            mw_step_freq = float(self._conn.query('s?')) * 1e6
             return mw_start_freq, mw_stop_freq, mw_step_freq
 
     def cw_on(self):
@@ -166,9 +166,8 @@ class MicrowaveSynthHDPro(Base, MicrowaveInterface):
         @return int: error code (0:OK, -1:error)
         """
         self.current_output_mode = MicrowaveMode.CW
-        time.sleep(0.5)
-        self.output_active = True
-        self.log.info('MicrowaveDummy>CW output on')
+        print('On:', self._on())
+        self._conn.write('g1')
         return 0
 
     def set_cw(self, frequency=None, power=None):
@@ -177,21 +176,31 @@ class MicrowaveSynthHDPro(Base, MicrowaveInterface):
 
         @param float frequency: frequency to set in Hz
         @param float power: power to set in dBm
-        @param bool useinterleave: If this mode exists you can choose it.
-
         @return float, float, str: current frequency in Hz, current power in dBm, current mode
-
-        Interleave option is used for arbitrary waveform generator devices.
         """
-        self.log.debug('MicrowaveDummy>set_cw, frequency: {0:f}, power {0:f}:'.format(frequency,
-                                                                                      power))
-        self.output_active = False
         self.current_output_mode = MicrowaveMode.CW
+
+        self._conn.write('X0')
+        self._conn.write('c1')
+
+        # trigger mode: immediate
+        self._conn.write('w0')
+
+        # sweep frequency and steps
+
         if frequency is not None:
-            self.mw_cw_frequency = frequency
+            self._conn.write('f{0:5.7f}'.format(frequency / 1e6))
+            self._conn.write('l{0:5.7f}'.format(frequency / 1e6))
+            self._conn.write('u{0:5.7f}'.format(frequency / 1e6))
         if power is not None:
-            self.mw_cw_power = power
-        return self.mw_cw_frequency, self.mw_cw_power, 'cw'
+            self._conn.write('W{0:2.3f}'.format(power))
+            self._conn.write('[{0:2.3f}'.format(power))
+            self._conn.write(']{0:2.3f}'.format(power))
+
+        mw_cw_freq = float(self._conn.query('f?')) * 1e6
+        mw_cw_power = float(self._conn.query('W?'))
+        print(frequency, power, mw_cw_freq, mw_cw_power)
+        return mw_cw_freq, mw_cw_power, 'cw'
 
     def list_on(self):
         """
@@ -222,7 +231,7 @@ class MicrowaveSynthHDPro(Base, MicrowaveInterface):
         if frequency is not None:
             self.mw_frequency_list = frequency
         if power is not None:
-            self.mw_cw_power = power
+            self._conn.write('W{0:2.3f}'.format(power))
         return self.mw_frequency_list, self.mw_cw_power, 'list'
 
     def reset_listpos(self):
@@ -239,10 +248,11 @@ class MicrowaveSynthHDPro(Base, MicrowaveInterface):
 
         @return int: error code (0:OK, -1:error)
         """
+        print('sweep on')
         self.current_output_mode = MicrowaveMode.SWEEP
+        self._on()
         self._conn.write('g1')
         mode = int(self._conn.query('g?'))
-        self._on()
         return 0
 
     def set_sweep(self, start=None, stop=None, step=None, power=None):
@@ -256,6 +266,7 @@ class MicrowaveSynthHDPro(Base, MicrowaveInterface):
                                                  current power in dBm,
                                                  current mode
         """
+        print('set sweep')
         self.current_output_mode = MicrowaveMode.SWEEP
         if (start is not None) and (stop is not None) and (step is not None):
             # sweep mode: linear sweep, non-continuous
@@ -272,23 +283,23 @@ class MicrowaveSynthHDPro(Base, MicrowaveInterface):
                 self._conn.write('^0')
 
             # sweep frequency and steps
-            self._conn.write('l{0:5.7f}'.format(start))
-            self._conn.write('u{0:5.7f}'.format(stop))
-            self._conn.write('s{0:5.7f}'.format(step))
+            self._conn.write('l{0:5.7f}'.format(start / 1e6))
+            self._conn.write('u{0:5.7f}'.format(stop / 1e6))
+            self._conn.write('s{0:5.7f}'.format(step / 1e6))
 
         # sweep power
         if power is not None:
             self._conn.write('W{0:2.3f}'.format(power))
             self._conn.write('[{0:2.3f}'.format(power))
-            self._conn.write(']{0:2-3f}'.format(power))
+            self._conn.write(']{0:2.3f}'.format(power))
 
-        mw_start_freq = float(self._conn.query('l?'))
-        mw_stop_freq = float(self._conn.query('u?'))
-        mw_step_freq = float(self._conn.query('s?'))
+        mw_start_freq = float(self._conn.query('l?')) * 1e6
+        mw_stop_freq = float(self._conn.query('u?')) * 1e6
+        mw_step_freq = float(self._conn.query('s?')) * 1e6
         mw_power = float(self._conn.query('W?'))
         mw_sweep_power_start = float(self._conn.query('[?'))
         mw_sweep_power_stop = float(self._conn.query(']?'))
-
+        print(start, stop, step, mw_start_freq, mw_stop_freq, mw_step_freq, mw_power, mw_sweep_power_start, mw_sweep_power_stop)
         return (
             mw_start_freq,
             mw_stop_freq,
@@ -306,14 +317,18 @@ class MicrowaveSynthHDPro(Base, MicrowaveInterface):
         self._conn.write('g1')
         return 0
 
-    def set_ext_trigger(self, pol):
+    def set_ext_trigger(self, pol, dwelltime):
         """ Set the external trigger for this device with proper polarization.
 
         @param TriggerEdge pol: polarisation of the trigger (basically rising edge or falling edge)
+        @param dwelltime: minimum dwell time
 
         @return object: current trigger polarity [TriggerEdge.RISING, TriggerEdge.FALLING]
         """
-        return TriggerEdge.FALLING
+        print('trigger conf', pol, dwelltime)
+        self._conn.write('t{0:f}'.format(1000 * 0.75 * dwelltime))
+        newtime = float(self._conn.query('t?')) / 1000
+        return TriggerEdge.RISING, newtime
 
     def trigger(self):
         """ Trigger the next element in the list or sweep mode programmatically.
@@ -327,13 +342,13 @@ class MicrowaveSynthHDPro(Base, MicrowaveInterface):
 
     def _off(self):
         self._conn.write('E0r0h0')
-        E = int(self._conn.query('E?'))
-        r = int(self._conn.query('r?'))
-        h = int(self._conn.query('h?'))
-        return E, r, h
+        return self._stat()
 
     def _on(self):
         self._conn.write('E1r1h1')
+        return self._stat()
+
+    def _stat(self):
         E = int(self._conn.query('E?'))
         r = int(self._conn.query('r?'))
         h = int(self._conn.query('h?'))
