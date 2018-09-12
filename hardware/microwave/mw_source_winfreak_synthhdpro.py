@@ -38,25 +38,42 @@ class MicrowaveSynthHDPro(Base, MicrowaveInterface):
 
     _serial_port = ConfigOption('serial_port', missing='error')
     _serial_timeout = ConfigOption('serial_timeout', 10, missing='warn')
+    _channel = ConfigOption('output_channel', 0, missing='info')
 
     def on_activate(self):
         """ Initialisation performed during activation of the module.
         """
         # trying to load the visa connection to the module
-        self.rm = visa.ResourceManager()
+        self.rm = visa.ResourceManager('@py')
         self._conn = self.rm.open_resource(
             self._serial_port,
-            timeout=self._serial_timeout)
+            baud_rate=9600,
+            read_termination='\n',
+            write_termination='\n',
+            timeout=self._serial_timeout*1000
+        )
 
-        self.mod_fw = self._conn.query('v0')
-        self.mod_hw = self._conn.query('v1')
         self.model = self._conn.query('+')
+        print(self.model)
         self.sernr = self._conn.query('-')
-        self.log.info('Found {0} {1} hw: {2} fw: {3}'.format(
+        print(self.sernr)
+        self.mod_hw = self._conn.query('v1')
+        print(self.mod_hw)
+        self.mod_fw = self._conn.query('v0')
+        print(self.mod_fw)
+
+        print(self._conn.query('v0v1'))
+        print(self._conn.read())
+
+        self.log.info('Found {0} Ser No: {1} {2} {3}'.format(
             self.model, self.sernr, self.mod_hw, self.mod_fw))
-        tmp = float(self._conn.query('z?'))
-        self.log.info('MW synth temperature: {0}°C'.format(tmp))
-        self._off()
+        tmp = self._conn.query('z')
+
+        self.log.info('MW synth temperature: {0}'.format(tmp))
+        ch = self._conn.query('C{0:d}C?'.format(self._channel))
+        self.log.debug('Channel set: {} channel read: {}'.format(self._channel, ch))
+        print('Off:', self._off())
+        self.current_output_mode = MicrowaveMode.CW
 
     def on_deactivate(self):
         """ Deinitialisation performed during deactivation of the module.
@@ -243,7 +260,7 @@ class MicrowaveSynthHDPro(Base, MicrowaveInterface):
         if (start is not None) and (stop is not None) and (step is not None):
             # sweep mode: linear sweep, non-continuous
             self._conn.write('X0')
-            self.conn.write('c0')
+            self._conn.write('c0')
 
             # trigger mode: single step
             self._conn.write('w2')
@@ -309,8 +326,15 @@ class MicrowaveSynthHDPro(Base, MicrowaveInterface):
         return
 
     def _off(self):
-        self.conn.query('E0r0h0')
+        self._conn.write('E0r0h0')
+        E = int(self._conn.query('E?'))
+        r = int(self._conn.query('r?'))
+        h = int(self._conn.query('h?'))
+        return E, r, h
 
     def _on(self):
-        self.conn.query('E1r1h1')
-
+        self._conn.write('E1r1h1')
+        E = int(self._conn.query('E?'))
+        r = int(self._conn.query('r?'))
+        h = int(self._conn.query('h?'))
+        return E, r, h
