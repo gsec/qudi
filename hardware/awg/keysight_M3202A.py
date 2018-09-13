@@ -27,7 +27,12 @@ import numpy as np
 from collections import OrderedDict
 
 import sys
-sys.path.append('C:\Program Files (x86)\Keysight\SD1\Libraries\Python')
+
+if sys.platform == 'win32':
+    sys.path.append('C:\Program Files (x86)\Keysight\SD1\Libraries\Python')
+else:
+    sys.path.append('/usr/local/Keysight/SD1')
+
 import keysightSD1 as ksd1
 
 from core.module import Base, ConfigOption
@@ -475,6 +480,7 @@ class M3202A(Base, PulserInterface):
             else:
                 wfm_nr = 1
             ram_left = self.awg.waveformLoad(wfm, wfm_nr)
+            print('RAM left:', ram_left)
             if ram_left < 0:
                 self.log.error('Device error when uploading waveform {} id: {}: {} {}'
                                ''.format(wfm, wfm_nr, ram_left, ksd1.SD_Error.getErrorMessage(ram_left)))
