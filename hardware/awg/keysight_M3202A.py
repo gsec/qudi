@@ -129,10 +129,10 @@ class M3202A(Base, PulserInterface):
         constraints.sequence_steps.default = 1
 
         activation_config = OrderedDict()
-        activation_config['all'] = {'a_ch1', 'a_ch2', 'a_ch3', 'a_ch4',}
+        activation_config['all'] = {'a_ch1', 'a_ch2', 'a_ch3', 'a_ch4'}
         constraints.activation_config = activation_config
         # FIXME: additional constraint really necessary?
-        constraints.dac_resolution = {'min': 8, 'max': 10, 'step': 1, 'unit': 'bit'}
+        constraints.dac_resolution = {'min': 14, 'max': 14, 'step': 1, 'unit': 'bit'}
         self._constraints = constraints
 
         self.awg = ksd1.SD_AOU()
@@ -468,7 +468,8 @@ class M3202A(Base, PulserInterface):
             wfm_name = '{0}_ch{1:d}'.format(name, a_ch_num)
             wfm = ksd1.SD_Wave()
             print('wfmobj:', a_ch, name, wfm_name, wfm)
-            print('wfmana:', analog_samples[a_ch])
+            print('wfm', a_ch, 'min:', np.min(analog_samples[a_ch]), 'max:', np.max(analog_samples[a_ch]), analog_samples[a_ch])
+            analog_samples[a_ch] /= 2
             wfmid = wfm.newFromArrayDouble(ksd1.SD_WaveformTypes.WAVE_ANALOG, analog_samples[a_ch])
             if wfmid < 0:
                 self.log.error('Device error when creating waveform {} ch: {}: {} {}'
@@ -479,14 +480,14 @@ class M3202A(Base, PulserInterface):
                 wfm_nr = max(set(self.written_waveforms.values())) + 1
             else:
                 wfm_nr = 1
-            ram_left = self.awg.waveformLoad(wfm, wfm_nr)
-            print('RAM left:', ram_left)
-            if ram_left < 0:
+            written = self.awg.waveformLoad(wfm, wfm_nr)
+            print('Samples written:', written)
+            if written < 0:
                 self.log.error('Device error when uploading waveform {} id: {}: {} {}'
-                               ''.format(wfm, wfm_nr, ram_left, ksd1.SD_Error.getErrorMessage(ram_left)))
+                               ''.format(wfm, wfm_nr, written, ksd1.SD_Error.getErrorMessage(written)))
                 return -1, waveforms
-            self.log.debug('Uploaded waveform {0} with id {1}. RAM available: {2}'
-                           ''.format(wfm_name, wfm_nr, ram_left))
+            self.log.debug('Uploaded waveform {0} with id {1}. RAM used: {2}'
+                           ''.format(wfm_name, wfm_nr, written))
             self.written_waveforms[wfm_name] = wfm_nr
             waveforms.append(wfm_name)
 
@@ -546,20 +547,22 @@ class M3202A(Base, PulserInterface):
                     print(name, track, waveform, wfm_nr, type(wfm_tuple), wfm_tuple)
                     print('seqstep:', step, track, wfm_nr, trig, delay, cycles, prescale, '->', ret)
                     if ret < 0:
-                        self.log.error('Error queueing wfm: {} {}'.format(ksd1.SD_Error.getErrorMessage(ret)))
+                        self.log.error('Error queueing wfm: {} {}'.format(ret, ksd1.SD_Error.getErrorMessage(ret)))
                         return steps_written
 
                     wfms_added[track] = '{0}_{1:d}'.format(name, track)
                 steps_written += 1
             else:
-                self.log.error('Unable to write sequence.\nLength of waveform tuple "{0}" does not '
-                               'match the number of sequence tracks.'.format(waveform_tuple))
+                self.log.error(
+                    'Unable to write sequence.\nLength of waveform tuple "{0}" does not '
+                    'match the number of sequence tracks.'.format(wfm_tuple)
+                )
                 return -1
 
         # more setup
         for a_ch in active_analog:
             print(self.awg.AWGqueueConfig(self.__ch_map[a_ch], 1))
-            print(self.awg.channelAmplitude(self.__ch_map[a_ch], 1.5))
+            print(self.awg.channelAmplitude(self.__ch_map[a_ch], self.analog_amplitudes[a_ch]))
             print(self.awg.AWGqueueSyncMode(self.__ch_map[a_ch], ksd1.SD_SyncModes.SYNC_CLK10))
 
         err = self.awg.triggerIOconfig(ksd1.SD_TriggerDirections.AOU_TRG_IN)
@@ -570,9 +573,9 @@ class M3202A(Base, PulserInterface):
         #print('trg', self.awg.AWGtriggerExternalConfig(2, 0, 3, 1))
         #print('trg', self.awg.AWGtriggerExternalConfig(3, 0, 3, 1))
         #print('trg', self.awg.AWGtriggerExternalConfig(4, 0, 3, 1))
-        print(self.awg.AWGqueueMarkerConfig(1, ksd1.SD_MarkerModes.START, 0, 1, 1, 0, 2, 0))
-        print(self.awg.AWGqueueMarkerConfig(2, ksd1.SD_MarkerModes.START, 1, 0, 1, 1, 10, 0))
-        print(self.awg.AWGqueueMarkerConfig(3, ksd1.SD_MarkerModes.START, 2, 0, 1, 1, 10, 0))
+        #print(self.awg.AWGqueueMarkerConfig(1, ksd1.SD_MarkerModes.START, 0, 1, 1, 0, 2, 0))
+        #print(self.awg.AWGqueueMarkerConfig(2, ksd1.SD_MarkerModes.START, 1, 0, 1, 1, 10, 0))
+        #print(self.awg.AWGqueueMarkerConfig(3, ksd1.SD_MarkerModes.START, 2, 0, 1, 1, 10, 0))
 
         if num_steps == steps_written:
             self.last_sequence = name
