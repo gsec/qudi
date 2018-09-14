@@ -1422,7 +1422,7 @@ class SequenceGeneratorLogic(GenericLogic):
         digital_samples = dict()
         try:
             for chnl in ensemble_info['analog_channels']:
-                analog_samples[chnl] = np.empty(array_length, dtype='float32')
+                analog_samples[chnl] = np.empty(array_length, dtype='float64')
             for chnl in ensemble_info['digital_channels']:
                 digital_samples[chnl] = np.empty(array_length, dtype=bool)
         except MemoryError:
@@ -1471,7 +1471,7 @@ class SequenceGeneratorLogic(GenericLogic):
                             digital_samples[chnl][array_write_index:array_write_index+samples_to_add] = digital_high[chnl]
                         for chnl in pulse_function:
                             analog_samples[chnl][array_write_index:array_write_index+samples_to_add] = pulse_function[chnl].get_samples(time_arr)/self.__analog_levels[0][chnl]
-
+                            print(analog_samples[chnl].dtype)
                         # Free memory
                         if pulse_function:
                             del time_arr

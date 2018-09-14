@@ -469,8 +469,12 @@ class M3202A(Base, PulserInterface):
             wfm = ksd1.SD_Wave()
             print('wfmobj:', a_ch, name, wfm_name, wfm)
             print('wfm', a_ch, 'min:', np.min(analog_samples[a_ch]), 'max:', np.max(analog_samples[a_ch]), analog_samples[a_ch])
+            print(analog_samples[a_ch].dtype)
             analog_samples[a_ch] /= 2
+            print(analog_samples[a_ch].dtype)
+            print('before new wfm')
             wfmid = wfm.newFromArrayDouble(ksd1.SD_WaveformTypes.WAVE_ANALOG, analog_samples[a_ch])
+            print('after new wfm')
             if wfmid < 0:
                 self.log.error('Device error when creating waveform {} ch: {}: {} {}'
                                ''.format(wfm_name, a_ch, wfmid, ksd1.SD_Error.getErrorMessage(wfmid)))
@@ -480,6 +484,7 @@ class M3202A(Base, PulserInterface):
                 wfm_nr = max(set(self.written_waveforms.values())) + 1
             else:
                 wfm_nr = 1
+            print('before load wfm')
             written = self.awg.waveformLoad(wfm, wfm_nr)
             print('Samples written:', written)
             if written < 0:
@@ -502,6 +507,7 @@ class M3202A(Base, PulserInterface):
                                         the according waveform names.
         @return: int, number of sequence steps written (-1 indicates failed process)
         """
+        print('write sequence', name)
         steps_written = 0
         wfms_added = {}
         # Check if device has sequencer option installed
