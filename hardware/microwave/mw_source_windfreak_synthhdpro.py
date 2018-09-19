@@ -125,7 +125,7 @@ class MicrowaveSynthHDPro(Base, MicrowaveInterface):
         @return int: error code (0:OK, -1:error)
         """
         self._conn.write('g0')
-        self.log.debug('Off:'.format(self._off()))
+        self.log.debug('Off: {}'.format(self._off()))
         return 0
 
     def get_power(self):
@@ -167,7 +167,7 @@ class MicrowaveSynthHDPro(Base, MicrowaveInterface):
         @return int: error code (0:OK, -1:error)
         """
         self.current_output_mode = MicrowaveMode.CW
-        self.log.debug('On:'.format(self._on()))
+        self.log.debug('On: {}'.format(self._on()))
         self._conn.write('g1')
         return 0
 
