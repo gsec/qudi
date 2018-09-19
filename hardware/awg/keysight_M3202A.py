@@ -22,7 +22,7 @@ top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi
 
 
 import os
-import time
+import datetime
 import numpy as np
 from collections import OrderedDict
 
@@ -162,14 +162,13 @@ class M3202A(Base, PulserInterface):
 
         @return int: error code (0:OK, -1:error)
         """
-        print('reset')
         activation_dict = self.get_active_channels()
         active_channels = {chnl for chnl in activation_dict if activation_dict[chnl]}
         for chan in active_channels:
             ch = self.__ch_map[chan]
-            print(self.awg.AWGstop(ch))
-            print(self.awg.AWGflush(ch))
-            print(self.awg.channelWaveShape(ch, ksd1.SD_Waveshapes.AOU_AWG))
+            self.log.debug('Stop Ch{} {}'.format(ch, self.awg.AWGstop(ch)))
+            self.log.debug('Flush Ch{} {}'.format(ch, self.awg.AWGflush(ch)))
+            self.log.debug('WaveShape Ch{} {}'.format(ch, self.awg.channelWaveShape(ch, ksd1.SD_Waveshapes.AOU_AWG)))
 
         self.awg.waveformFlush()
 
@@ -199,8 +198,7 @@ class M3202A(Base, PulserInterface):
 
         @return int: error code (0:OK, -1:error)
         """
-        print('start')
-        print(self.awg.AWGstartMultiple(0b1111))
+        self.log.debug('StartMultiple {}'.format(self.awg.AWGstartMultiple(0b1111)))
         return 0
 
     def pulser_off(self):
@@ -208,8 +206,7 @@ class M3202A(Base, PulserInterface):
 
         @return int: error code (0:OK, -1:error)
         """
-        print('stop')
-        print(self.awg.AWGstopMultiple(0b1111))
+        self.log.debug('StopMultiple {}'.format(self.awg.AWGstopMultiple(0b1111)))
         return 0
 
     def load_waveform(self, load_dict):
@@ -263,7 +260,6 @@ class M3202A(Base, PulserInterface):
 
         @return int: error code (0:OK, -1:error)
         """
-        print('Clear all.')
         self.reset()
         return 0
 
@@ -352,7 +348,7 @@ class M3202A(Base, PulserInterface):
             self.awg.channelOffset(self.__ch_map[ch], off)
             self.analog_offsets[ch] = off
 
-        print('analog amp:', self.analog_amplitudes, 'offs:', self.analog_offsets)
+        self.log.debug('analog amp: {} offset: {}'.format(self.analog_amplitudes, self.analog_offsets))
         return self.analog_amplitudes, self.analog_offsets
 
     def get_digital_level(self, low=None, high=None):
@@ -381,7 +377,7 @@ class M3202A(Base, PulserInterface):
                               the second dict the high value for ALL digital channels.
                               Keys are the channel descriptor strings (i.e. 'd_ch1', 'd_ch2')
         """
-        print('no digital levels set')
+        self.log.warning('no digital levels set')
         return {}, {}
 
     def get_active_channels(self, ch=None):
@@ -430,7 +426,9 @@ class M3202A(Base, PulserInterface):
         @return: (int, list) number of samples written (-1 indicates failed process) and list of
                              created waveform names
         """
-        print('write wfm:', name, is_first_chunk, is_last_chunk, total_number_of_samples)
+        tstart = datetime.datetime.now()
+        self.log.debug('@{} write wfm: {} first: {} last: {} {}'.format(
+            datetime.datetime.now() - tstart, name, is_first_chunk, is_last_chunk, total_number_of_samples))
         waveforms = list()
         min_samples = 30
 
@@ -467,14 +465,15 @@ class M3202A(Base, PulserInterface):
             a_ch_num = self.__ch_map[a_ch]
             wfm_name = '{0}_ch{1:d}'.format(name, a_ch_num)
             wfm = ksd1.SD_Wave()
-            print('wfmobj:', a_ch, name, wfm_name, wfm)
-            print('wfm', a_ch, 'min:', np.min(analog_samples[a_ch]), 'max:', np.max(analog_samples[a_ch]), analog_samples[a_ch])
-            print(analog_samples[a_ch].dtype)
-            analog_samples[a_ch] /= 2
-            print(analog_samples[a_ch].dtype)
-            print('before new wfm')
+            analog_samples[a_ch] = analog_samples[a_ch].astype('float64') / 2
+
+            self.log.debug('wfmobj: {} {} {} min: {} max: {}'.format(
+                a_ch, name, wfm_name, np.min(analog_samples[a_ch]), np.max(analog_samples[a_ch])))
+
+            self.log.debug('@{} Before new wfm {}'.format(datetime.datetime.now() - tstart, a_ch))
             wfmid = wfm.newFromArrayDouble(ksd1.SD_WaveformTypes.WAVE_ANALOG, analog_samples[a_ch])
-            print('after new wfm')
+            self.log.debug('@{} After new wfm {}'.format(datetime.datetime.now() - tstart, a_ch))
+
             if wfmid < 0:
                 self.log.error('Device error when creating waveform {} ch: {}: {} {}'
                                ''.format(wfm_name, a_ch, wfmid, ksd1.SD_Error.getErrorMessage(wfmid)))
@@ -484,18 +483,18 @@ class M3202A(Base, PulserInterface):
                 wfm_nr = max(set(self.written_waveforms.values())) + 1
             else:
                 wfm_nr = 1
-            print('before load wfm')
+
+            self.log.debug('@{} Before loading wfm {} '.format(datetime.datetime.now() - tstart, a_ch))
             written = self.awg.waveformLoad(wfm, wfm_nr)
-            print('Samples written:', written)
+            self.log.debug('@{} Samples written: {} {} '.format(datetime.datetime.now() - tstart, a_ch, wfm, written))
             if written < 0:
                 self.log.error('Device error when uploading waveform {} id: {}: {} {}'
                                ''.format(wfm, wfm_nr, written, ksd1.SD_Error.getErrorMessage(written)))
                 return -1, waveforms
-            self.log.debug('Uploaded waveform {0} with id {1}. RAM used: {2}'
-                           ''.format(wfm_name, wfm_nr, written))
             self.written_waveforms[wfm_name] = wfm_nr
             waveforms.append(wfm_name)
 
+        self.log.debug('@{} Finished writing waveforms'.format(datetime.datetime.now() - tstart))
         return total_number_of_samples, waveforms
 
     def write_sequence(self, name, sequence_parameter_list):
@@ -507,7 +506,6 @@ class M3202A(Base, PulserInterface):
                                         the according waveform names.
         @return: int, number of sequence steps written (-1 indicates failed process)
         """
-        print('write sequence', name)
         steps_written = 0
         wfms_added = {}
         # Check if device has sequencer option installed
@@ -540,18 +538,22 @@ class M3202A(Base, PulserInterface):
                     # !!!
                     wfm_nr = self.written_waveforms[waveform]
                     if seq_params['wait_for'] != 'OFF':
-                        print('Trig EXT')
+                        self.log.debug('Ch{} Trig EXT'.format(track))
                         trig = ksd1.SD_TriggerModes.EXTTRIG
                         #trig = ksd1.SD_TriggerModes.EXTTRIG_CYCLE
                     else:
-                        print('TrigAuto')
+                        self.log.debug('Ch{} TrigAuto'.format(track))
                         trig = ksd1.SD_TriggerModes.AUTOTRIG
                     cycles = seq_params['repetitions'] + 1
                     prescale = 0
                     delay = 0
                     ret = self.awg.AWGqueueWaveform(track, wfm_nr, trig, delay, cycles, prescale)
-                    print(name, track, waveform, wfm_nr, type(wfm_tuple), wfm_tuple)
-                    print('seqstep:', step, track, wfm_nr, trig, delay, cycles, prescale, '->', ret)
+                    self.log.debug('Sequence: {} Ch{} {} No{}'.format(
+                        name, track, waveform, wfm_nr)
+                    )
+                    self.log.debug('Sequence Step: {0} Ch{1} No{2} Trig: {3} Del: {4} Rep: {5} Pre: {6} -> {7}'.format(
+                        step, track, wfm_nr, trig, delay, cycles, prescale, ret)
+                    )
                     if ret < 0:
                         self.log.error('Error queueing wfm: {} {}'.format(ret, ksd1.SD_Error.getErrorMessage(ret)))
                         return steps_written
@@ -567,13 +569,17 @@ class M3202A(Base, PulserInterface):
 
         # more setup
         for a_ch in active_analog:
-            print(self.awg.AWGqueueConfig(self.__ch_map[a_ch], 1))
-            print(self.awg.channelAmplitude(self.__ch_map[a_ch], self.analog_amplitudes[a_ch]))
-            print(self.awg.AWGqueueSyncMode(self.__ch_map[a_ch], ksd1.SD_SyncModes.SYNC_CLK10))
+            self.log.debug('QueueConfig {}'.format(
+                self.awg.AWGqueueConfig(self.__ch_map[a_ch], 1)))
+            self.log.debug('channelAmpliude {}'.format(
+                self.awg.channelAmplitude(self.__ch_map[a_ch], self.analog_amplitudes[a_ch])))
+            self.log.debug('QueueSyncMode {}'.format(
+                self.awg.AWGqueueSyncMode(self.__ch_map[a_ch], ksd1.SD_SyncModes.SYNC_CLK10)))
 
         err = self.awg.triggerIOconfig(ksd1.SD_TriggerDirections.AOU_TRG_IN)
         if err < 0:
-            print(err, ksd1.SD_Error.getErrorMessage(err))
+            self.log.error('Error configuring triggers: {} {}'.format(
+                err, ksd1.SD_Error.getErrorMessage(err)))
 
         #print('trg', self.awg.AWGtriggerExternalConfig(1, 0, 3, 1))
         #print('trg', self.awg.AWGtriggerExternalConfig(2, 0, 3, 1))
