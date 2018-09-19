@@ -64,10 +64,14 @@ class MicrowaveSynthHDPro(Base, MicrowaveInterface):
         tmp = self._conn.query('z')
         self.log.info('MW synth temperature: {0}°C'.format(tmp))
 
-        ch = self._conn.query('C{0:d}C?'.format(self._channel))
-        self.log.debug('Channel set: {} channel read: {}'.format(self._channel, ch))
+        ch = self._conn.query('C{0:d}C?'.format(0))
+        self.log.debug('Ch{} Off: {}'.format(ch, self._off()))
 
-        print('Off:', self._off())
+        ch = self._conn.query('C{0:d}C?'.format(1))
+        self.log.debug('Ch{} Off: {}'.format(ch, self._off()))
+
+        ch = self._conn.query('C{0:d}C?'.format(self._channel))
+
         self.current_output_mode = MicrowaveMode.CW
 
     def on_deactivate(self):
@@ -102,7 +106,6 @@ class MicrowaveSynthHDPro(Base, MicrowaveInterface):
 
         @return str, bool: mode ['cw', 'list', 'sweep'], is_running [True, False]
         """
-        print('get status')
         mode = ''
 
         status = self._stat()
@@ -122,7 +125,7 @@ class MicrowaveSynthHDPro(Base, MicrowaveInterface):
         @return int: error code (0:OK, -1:error)
         """
         self._conn.write('g0')
-        print('Off:', self._off())
+        self.log.debug('Off:'.format(self._off()))
         return 0
 
     def get_power(self):
@@ -130,7 +133,6 @@ class MicrowaveSynthHDPro(Base, MicrowaveInterface):
 
         @return float: the power set at the device in dBm
         """
-        print('get power')
         if self.current_output_mode == MicrowaveMode.CW:
             mw_cw_power = float(self._conn.query('W?'))
             return mw_cw_power
@@ -146,7 +148,6 @@ class MicrowaveSynthHDPro(Base, MicrowaveInterface):
 
         @return [float, list]: frequency(s) currently set for this device in Hz
         """
-        print('get freq')
         if self.current_output_mode == MicrowaveMode.CW:
             mw_cw_frequency = float(self._conn.query('f?')) * 1e6
             return mw_cw_frequency
@@ -166,7 +167,7 @@ class MicrowaveSynthHDPro(Base, MicrowaveInterface):
         @return int: error code (0:OK, -1:error)
         """
         self.current_output_mode = MicrowaveMode.CW
-        print('On:', self._on())
+        self.log.debug('On:'.format(self._on()))
         self._conn.write('g1')
         return 0
 
@@ -199,7 +200,7 @@ class MicrowaveSynthHDPro(Base, MicrowaveInterface):
 
         mw_cw_freq = float(self._conn.query('f?')) * 1e6
         mw_cw_power = float(self._conn.query('W?'))
-        print(frequency, power, mw_cw_freq, mw_cw_power)
+        self.log.debug('CW f: {0} {2} P: {1} {3}'.format(frequency, power, mw_cw_freq, mw_cw_power))
         return mw_cw_freq, mw_cw_power, 'cw'
 
     def list_on(self):
@@ -212,7 +213,7 @@ class MicrowaveSynthHDPro(Base, MicrowaveInterface):
         self.current_output_mode = MicrowaveMode.LIST
         time.sleep(1)
         self.output_active = True
-        self.log.info('MicrowaveDummy>List mode output on')
+        self.log.warn('MicrowaveDummy>List mode output on')
         return 0
 
     def set_list(self, frequency=None, power=None):
@@ -248,7 +249,6 @@ class MicrowaveSynthHDPro(Base, MicrowaveInterface):
 
         @return int: error code (0:OK, -1:error)
         """
-        print('sweep on')
         self.current_output_mode = MicrowaveMode.SWEEP
         self._on()
         self._conn.write('g1')
@@ -266,7 +266,6 @@ class MicrowaveSynthHDPro(Base, MicrowaveInterface):
                                                  current power in dBm,
                                                  current mode
         """
-        print('set sweep')
         self.current_output_mode = MicrowaveMode.SWEEP
         if (start is not None) and (stop is not None) and (step is not None):
             # sweep mode: linear sweep, non-continuous
@@ -299,7 +298,9 @@ class MicrowaveSynthHDPro(Base, MicrowaveInterface):
         mw_power = float(self._conn.query('W?'))
         mw_sweep_power_start = float(self._conn.query('[?'))
         mw_sweep_power_stop = float(self._conn.query(']?'))
-        print(start, stop, step, mw_start_freq, mw_stop_freq, mw_step_freq, mw_power, mw_sweep_power_start, mw_sweep_power_stop)
+        self.log.debug('SWEEP: {} -> {} {}, {} -> {} {}, {} -> {}'.format(
+            start, stop, step, mw_start_freq, mw_stop_freq, mw_step_freq, mw_power,
+            mw_sweep_power_start, mw_sweep_power_stop))
         return (
             mw_start_freq,
             mw_stop_freq,
@@ -325,7 +326,7 @@ class MicrowaveSynthHDPro(Base, MicrowaveInterface):
 
         @return object: current trigger polarity [TriggerEdge.RISING, TriggerEdge.FALLING]
         """
-        print('trigger conf', pol, dwelltime)
+        self.log.debug('Trigger at {} dwell for {}'.format(pol, dwelltime))
         self._conn.write('t{0:f}'.format(1000 * 0.75 * dwelltime))
         newtime = float(self._conn.query('t?')) / 1000
         return TriggerEdge.RISING, newtime
