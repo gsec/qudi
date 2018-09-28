@@ -43,7 +43,7 @@ from interface.pulser_interface import PulserInterface, PulserConstraints
 
 
 class M3202A(Base, PulserInterface):
-    """
+    """ Qudi module for the Keysight M3202A PXIe AWG card (1GHz sampling frequency)
 
     """
     _modclass = 'M3202A'
@@ -688,4 +688,14 @@ class M3202A(Base, PulserInterface):
         return True
 
     def _fast_newFromArrayDouble(self, waveform_object, waveform_type, samples):
+        """ Reimplement newArrayFromDouble() for numpy arrays for massive speed gains.
+        Original signature:
+        int SD_Wave::newFromArrayDouble(
+            int waveformType, double[] waveformDataA, double[] waveformDataB=0));
+
+        @param object waveform_object: SD1 waveform object
+        @param object waveform_type: SD1 waveform Type
+        @param ndarray samples: array containing samples
+        @return int: id of waveform or error code
+        """
         return waveform_object.newFromArrayDouble(waveform_type, samples)
