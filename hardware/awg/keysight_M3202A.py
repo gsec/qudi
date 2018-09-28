@@ -51,7 +51,6 @@ class M3202A(Base, PulserInterface):
 
     # config options
     serial = ConfigOption(name='awg_serial', missing='error')
-    stuff = ConfigOption(name='awg_stuff', missing='info')
 
     __ch_map = {
         'a_ch1': 1,
@@ -123,8 +122,8 @@ class M3202A(Base, PulserInterface):
         constraints.repetitions.step = 1
         constraints.repetitions.default = 0
         # ToDo: Check how many external triggers are available
-        constraints.event_triggers = ['A', 'B']
-        constraints.flags = ['A', 'B', 'C', 'D']
+        constraints.event_triggers = []
+        constraints.flags = []
 
         constraints.sequence_steps.min = 1
         constraints.sequence_steps.max = 1024
@@ -139,7 +138,9 @@ class M3202A(Base, PulserInterface):
         self._constraints = constraints
 
         self.awg = ksd1.SD_AOU()
-        aouID = self.awg.openWithSerialNumberCompatibility('M3202A', self.serial, ksd1.SD_Compatibility.KEYSIGHT)
+        aouID = self.awg.openWithSerialNumberCompatibility(
+            'M3202A', self.serial, ksd1.SD_Compatibility.KEYSIGHT)
+
         # Check AWG Connection for errors
         if aouID < 0:
             self.awg.close()
@@ -154,8 +155,10 @@ class M3202A(Base, PulserInterface):
 
         self.reset()
 
-        self.log.info('Keysight AWG Model: {} serial: {} FW Ver: {} HW Ver: {} Chassis: {} Slot: {}'
-                      ''.format(self.model, self.ser, self.fwver, self.hwver, self.chassis, self.ch_slot))
+        self.log.info('Keysight AWG Model: {} serial: {} '
+                      'FW Ver: {} HW Ver: {} Chassis: {} Slot: {}'
+                      ''.format(self.model, self.ser, self.fwver, self.hwver, self.chassis,
+                                self.ch_slot))
 
     def on_deactivate(self):
         self.awg.close()
@@ -171,7 +174,9 @@ class M3202A(Base, PulserInterface):
             ch = self.__ch_map[chan]
             self.log.debug('Stop Ch{} {}'.format(ch, self.awg.AWGstop(ch)))
             self.log.debug('Flush Ch{} {}'.format(ch, self.awg.AWGflush(ch)))
-            self.log.debug('WaveShape Ch{} {}'.format(ch, self.awg.channelWaveShape(ch, ksd1.SD_Waveshapes.AOU_AWG)))
+            self.log.debug(
+                'WaveShape Ch{} {}'.format(
+                    ch, self.awg.channelWaveShape(ch, ksd1.SD_Waveshapes.AOU_AWG)))
 
         self.awg.waveformFlush()
 
@@ -182,10 +187,14 @@ class M3202A(Base, PulserInterface):
         # uploaded waveforms, waveform name -> instrument wfm number
         self.written_waveforms = {}
 
-        amps = {ch: self._constraints.a_ch_amplitude.default for ch, en in self.get_active_channels().items() if en}
-        offs = {ch: self._constraints.a_ch_offset.default for ch, en in self.get_active_channels().items() if en}
-        self.set_analog_level(amps, offs)
+        amps = {
+            ch: self._constraints.a_ch_amplitude.default
+            for ch, en in self.get_active_channels().items() if en}
+        offs = {
+            ch: self._constraints.a_ch_offset.default
+            for ch, en in self.get_active_channels().items() if en}
 
+        self.set_analog_level(amps, offs)
         return 0
 
     def get_constraints(self):
@@ -255,7 +264,6 @@ class M3202A(Base, PulserInterface):
         """
         if self.last_sequence is None:
             return self.loaded_waveforms, 'waveform'
-
         return self.loaded_waveforms, 'sequence'
 
     def clear_all(self):
@@ -351,7 +359,8 @@ class M3202A(Base, PulserInterface):
             self.awg.channelOffset(self.__ch_map[ch], off)
             self.analog_offsets[ch] = off
 
-        self.log.debug('analog amp: {} offset: {}'.format(self.analog_amplitudes, self.analog_offsets))
+        self.log.debug('analog amp: {} offset: {}'
+                       ''.format(self.analog_amplitudes, self.analog_offsets))
         return self.analog_amplitudes, self.analog_offsets
 
     def get_digital_level(self, low=None, high=None):
@@ -431,7 +440,8 @@ class M3202A(Base, PulserInterface):
         """
         tstart = datetime.datetime.now()
         self.log.debug('@{} write wfm: {} first: {} last: {} {}'.format(
-            datetime.datetime.now() - tstart, name, is_first_chunk, is_last_chunk, total_number_of_samples))
+            datetime.datetime.now() - tstart, name, is_first_chunk, is_last_chunk,
+            total_number_of_samples))
         waveforms = list()
         min_samples = 30
 
