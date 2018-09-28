@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 
 """
-This file contains the Qudi hardware module for AWG70000 Series.
+This file contains the Qudi hardware module for the Keysight M3202A PXIe AWG device.
+(previously Signadyne SD1).
 
 Qudi is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -30,8 +31,10 @@ import sys
 
 if sys.platform == 'win32':
     sys.path.append('C:\Program Files (x86)\Keysight\SD1\Libraries\Python')
-else:
+elif sys.platform == 'linux':
     sys.path.append('/usr/local/Keysight/SD1')
+else:
+    raise Exception('Unknown platform, please add path to library.')
 
 import keysightSD1 as ksd1
 
@@ -471,7 +474,8 @@ class M3202A(Base, PulserInterface):
                 a_ch, name, wfm_name, np.min(analog_samples[a_ch]), np.max(analog_samples[a_ch])))
 
             self.log.debug('@{} Before new wfm {}'.format(datetime.datetime.now() - tstart, a_ch))
-            wfmid = wfm.newFromArrayDouble(ksd1.SD_WaveformTypes.WAVE_ANALOG, analog_samples[a_ch])
+            wfmid = self._fast_newFromArrayDouble(
+                wfm, ksd1.SD_WaveformTypes.WAVE_ANALOG, analog_samples[a_ch])
             self.log.debug('@{} After new wfm {}'.format(datetime.datetime.now() - tstart, a_ch))
 
             if wfmid < 0:
@@ -672,3 +676,6 @@ class M3202A(Base, PulserInterface):
         @return: bool, True for yes, False for no.
         """
         return True
+
+    def _fast_newFromArrayDouble(self, waveform_object, waveform_type, samples):
+        return waveform_object.newFromArrayDouble(waveform_type, samples)
